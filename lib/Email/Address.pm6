@@ -55,7 +55,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
 
     # angle-addr      =   [CFWS] "<" addr-spec ">" [CFWS] /\r
     #                     obs-angle-addr\r
-    token angle-addr  { <cfws>? '<' <addr-spec> '>' <cfws>? |
+    token angle-addr  { <.cfws>? '<' <addr-spec> '>' <.cfws>? |
                         <obs-angle-addr> }
 
     # group           =   display-name ":" [group-list] ";" [CFWS]\r
@@ -83,7 +83,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
     token domain      { <dot-atom> | <domain-literal> | <obs-domain> }
 
     # domain-literal  =   [CFWS] "[" *([FWS] dtext) [FWS] "]" [CFWS]\r
-    token domain-literal { <cfws>? '[' [<fws>? <dtext>]* <fws> ']' }
+    token domain-literal { $<pre-literal> = [ <cfws>? ] '[' $<literal> = [ [ <fws>? <dtext> ]* <fws> ] ']' }
 
     # dtext           =   %d33-90 /          ; Printable US-ASCII\r
     #                     %d94-126 /         ;  characters not including\r
@@ -122,13 +122,13 @@ grammar RFC5322-Parser is RFC5234-Parser {
                         '~' }
 
     # atom            =   [CFWS] 1*atext [CFWS]\r
-    token atom        { <cfws>? <atext>+ <cfws>? }
+    token atom        { <.cfws>? <atext>+ <.cfws>? }
 
     # dot-atom-text   =   1*atext *("." 1*atext)\r
-    token dot-atom-text { <atext>+ [ '.' <atext>+ ]* }
+    token dot-atom-text { $<atexts> = [ <atext>+ ]+ % '.' }
 
     # dot-atom        =   [CFWS] dot-atom-text [CFWS]\r
-    token dot-atom    { <cfws>? <dot-atom-text> <cfws>? }
+    token dot-atom    { <.cfws>? <dot-atom-text> <.cfws>? }
 
     # FWS             =   ([*WSP CRLF] 1*WSP) /  obs-FWS\r
     #                                        ; Folding white space\r
@@ -147,7 +147,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
     token ccontent    { <ctext> | <quoted-pair> | <comment> }
 
     # comment         =   "(" *([FWS] ccontent) [FWS] ")"\r
-    token comment     { '(' [ <fws>? <ccontent> ]* <fws>? ')' }
+    token comment     { '(' $<comment-content> = [ [ <fws>? <ccontent> ]* <fws>? ] ')' }
 
     # CFWS            =   (1*([FWS] comment) [FWS]) / FWS\r
     token cfws        { [ [ <fws>? <comment> ]+ <fws>? ] | <fws> }
@@ -170,9 +170,9 @@ grammar RFC5322-Parser is RFC5234-Parser {
     # quoted-string   =   [CFWS]\r
     #                     DQUOTE *([FWS] qcontent) [FWS] DQUOTE\r
     #                     [CFWS]\r
-    token quoted-string { <cfws>?
-                          <dquote> [ <fws>? <qcontent> ]* <fws>? <dquote>
-                          <cfws>? }
+    token quoted-string { <.cfws>?
+                          <.dquote> [ <.fws>? <qcontent> ]* <.fws>? <.dquote>
+                          <.cfws>? }
 
     # obs-NO-WS-CTL   =   %d1-8 /            ; US-ASCII control\r
     #                     %d11 /             ;  characters that do not\r
@@ -237,6 +237,44 @@ grammar RFC5322-Parser is RFC5234-Parser {
 }
 
 class RFC5322-Actions {
+    sub unfold-fws($_) { S:global/ "\r\n" ( " " | "\t" ) /$0/ }
+
+    method TOP($/) { make $<address-list>.made }
+    method address($/) { make $<mailbox>.made // $<group>.made }
+    method mailbox($/) { make $<name-addr>.made // $<addr-spec>.made }
+    method name-addr($/) {
+        make %(
+            type         => 'mailbox',
+            display-name => $<display-name>.made,
+            address      => $<angle-addr>.made,
+            comment      => $*comments.drain,
+        )
+    }
+    method angle-addr($/) { make $<addr-spec>.made // $<obs-angle-addr>.made }
+    method group($/) {
+        make %(
+            type         => 'group',
+            display-name => $<display-name>.made,
+            group-list   => $<group-list>.made,
+        )
+    }
+    method display-name($/) { make $<phrase>.made }
+    method mailbox-list($/) { make $<mailbox>».made // $<obs-mbox-list>.made }
+    method address-list($/) { make $<address>».made // $<obs-addr-list>.made }
+    method group-list($/) { make $<mailbox-list>.made // $<obs-group-list>.made // [] }
+    method addr-spec($/) {
+        make %(
+            local-part => $<local-part>.made,
+            domain     => $<domain>.made,
+        )
+    }
+    method local-part($/) { make $<dot-atom>.made // $<quoted-string>.made // $<obs-local-part>.made }
+    method domain($/) { make $<dot-atom>.made // $<domain-literal>.made // $<obs-domain>.made }
+    method domain-literal($/) {
+        make ($<pre-literal>.made ~ "[$<literal>]").&unfold-fws
+    }
+
+    method comment($/) { $*comments.append("$<comment-content>") }
 }
 
 sub format-email-addresses(*@addresses --> Str) is export(:format-email-addresses) {
@@ -405,10 +443,29 @@ addresses (like From, To, Cc, Bcc, Reply-To, Sender, etc.). Also it can generate
 a string value for those headers from a list of email address objects. This
 is backwards compatible with RFC 2822 and RFC 822.
 
-This is a port of the Email::Address::XS module into pure Perl6, this includes
-porting the C code that was used from the Dovecot IMAP project that does the
-actual parsing. The code was converted to idiomatic Perl 6, though, so do not
-expect the interface to be identical to the Perl 5 counterpart.
+This code has some part that are ported from Perl's Email::Address::XS, but the parser is built directly from the grammar i RFC 5322.
+
+The parser does not attempt to preserve an email address in its original form. Instead, it breaks the email address down into the semantic bits:
+
+=over
+
+=item display-name
+
+This is the human description of the email address. It will be preserved as-is, for the most part. The parser allows for folding whitespace, which will be unfolded, and comments, which will be removed.
+
+=item address
+
+This is the email address itself. It is broken down into a C<local-part> and a C<domain>. Each of these will be preserved as presented (assuming they pass the RFC 5322 parser, which is quite broad in what it accepts). They will have folding whitespace unfolded and comments removed.
+
+=item comment
+
+This is the full comment that has been extracted during parsing. All the comments found in the email address will be concatenated together to fill this field.
+
+=back
+
+No effort will be made to preserve the white space found in non-semantic parts, such as the space between the display name and the address part.
+
+B<NOTE:> As of this writing, the code is not very optimized. It has also not been reviewed for security.
 
 =head1 EXPORTED SUBROUTINES
 
