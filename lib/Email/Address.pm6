@@ -1,9 +1,8 @@
-unit class Email::Address;
+unit package Email::Address;
 use v6;
 
 # no precompilation;
 # use Grammar::Tracer;
-use Grammar::ABNF;
 
 grammar RFC5234-Parser {
     # ALPHA          =  %x41-5A / %x61-7A   ; A-Z / a-z
@@ -300,6 +299,90 @@ class RFC5322-Actions {
     }
 }
 
+class AddrSpec {
+    has Str $.user is rw;
+    has Str $.host is rw;
+
+    method Str(--> Str:D) { compose-address($!user, $!host) }
+}
+
+subset CommentStr of Str where {
+    my regex balanced-parens { <-[()]>+ | '()'+ | '(' ~ ')' <balanced-parens> }
+    /^ <balanced-parens> $/
+};
+
+
+class GLOBAL::Email::Address {
+    has Str $.display-name is rw;
+    has AddrSpec $.address is rw;
+    has CommentStr $.comment is rw;
+
+    has Str $!original;
+    has Bool $!invalid;
+
+    multi method new(::?CLASS:U:
+        Str $display-name,
+        Str $address,
+        Str $comment,
+    ) {
+        self.bless(:$display-name, :$address, :$comment);
+    }
+
+    submethod BUILD(
+        :$!display-name,
+        :$!address,
+        :$!comment,
+        :$user,
+        :$host,
+    ) {
+        die "When constructing Email::Address, you may pass either address or host and user, but not both."
+            if $!address.defined && ($user.defined || $host.defined);
+
+        # address prevents user/host from being set
+        $!address = AddrSpec.new(:$user, :$host) without $!address;
+    }
+
+    method user(--> Str) is rw { return-rw $!address.user }
+    method host(--> Str) is rw { return-rw $!address.host }
+    method original(--> Str) { $!original }
+
+    method set-address(Str:D $address) {
+        ($!address.user, $!address.host) = split-address($address);
+        $!address.user = Nil without $!address.host;
+        $!address.host = Nil without $!address.user;
+    }
+
+    method name(--> Str) {
+        with $!display-name { return $!display-name if $!display-name.chars }
+        with $!comment { return $!comment if $!comment.chars }
+        with $.user { return $.user }
+        '';
+    }
+
+    method Str(--> Str) { self.format }
+
+    method parse(::?CLASS:U: Str:D $string --> Seq) {
+        parse-email-addresses($string, self);
+    }
+
+    method parse-bare-address(::?CLASS:U: Str:D $address --> Email::Address) {
+        self.new(:$address);
+    }
+
+    method format(::?CLASS:D: --> Str:D) {
+        format-email-addresses(self);
+    }
+
+    method is-valid(::?CLASS:D: --> Bool:D) {
+        $.user.defined && $.host.defined && $.host.chars;
+    }
+}
+
+class Group {
+    has Str $.display-name is rw;
+    has Email::Address @.addresses;
+}
+
 sub format-email-addresses(*@addresses --> Str) is export(:format-email-addresses) {
     format-email-groups((Nil) => @addresses);
 }
@@ -309,7 +392,17 @@ sub format-email-groups(*@groups --> Str) is export(:format-email-groups) {
 }
 
 sub parse-email-addresses(Str:D $addresses --> Seq) is export(:parse-email-addresses) {
-    ...
+    my $*comments = class {
+        has $.comment;
+        method drain() { my $c = $!comment; $!comment = Nil; $c }
+        method append($c) {
+            with $!comment { $!comment ~= $c }
+            else { $!comment = $c }
+        }
+    }.new;
+
+    #my $match = Email::Address::RFC5322-Parser.parse($str, actions => Email::Address::RFC5322-Actions );
+
 }
 
 sub parse-email-groups(Str:D $groups --> Seq) is export(:parse-email-groups) {
@@ -324,82 +417,6 @@ sub split-address(Str $input --> List) is export(:split-address) {
     ...
 }
 
-class AddrSpec {
-    has Str $.user is rw;
-    has Str $.host is rw;
-
-    method Str(--> Str:D) { compose-address($!user, $!host) }
-}
-
-subset CommentStr of Str where {
-    my regex balanced-parens { <-[()]>+ | '()'+ | '(' ~ ')' <balanced-parens> }
-    /^ <balanced-parens> $/
-};
-
-has Str $.phrase is rw;
-has AddrSpec $.address is rw;
-has CommentStr $.comment is rw;
-
-has Str $!original;
-has Bool $!invalid;
-
-multi method new(::?CLASS:U:
-    Str $phrase,
-    Str $address,
-    Str $comment,
-) {
-    self.bless(:$phrase, :$address, :$comment);
-}
-
-submethod BUILD(
-    :$!phrase,
-    :$!address,
-    :$!comment,
-    :$user,
-    :$host,
-) {
-    die "When constructing Email::Address, you may pass either address or host and user, but not both."
-        if $!address.defined && ($user.defined || $host.defined);
-
-    # address prevents user/host from being set
-    $!address = AddrSpec.new(:$user, :$host) without $!address;
-}
-
-method user(--> Str) is rw { return-rw $!address.user }
-method host(--> Str) is rw { return-rw $!address.host }
-method original(--> Str) { $!original }
-
-method set-address(Str:D $address) {
-    ($!address.user, $!address.host) = split-address($address);
-    $!address.user = Nil without $!address.host;
-    $!address.host = Nil without $!address.user;
-}
-
-method name(--> Str) {
-    with $!phrase { return $!phrase if $!phrase.chars }
-    with $!comment { return $!comment if $!comment.chars }
-    with $.user { return $.user }
-    '';
-}
-
-method Str(--> Str) { self.format }
-
-method parse(::?CLASS:U: Str:D $string --> Seq) {
-    parse-email-addresses($string, self);
-}
-
-method parse-bare-address(::?CLASS:U: Str:D $address --> Email::Address) {
-    self.new(:$address);
-}
-
-method format(::?CLASS:D: --> Str:D) {
-    format-email-addresses(self);
-}
-
-method is-valid(::?CLASS:D: --> Bool:D) {
-    $.user.defined && $.host.defined && $.host.chars;
-}
-
 =begin pod
 
 =head1 NAME
@@ -410,10 +427,10 @@ Email::Address - parse and format RFC 5322 email addresses and groups
 
     use Email::Address;
     my $winston's = Email::Address.new(
-        phrase  => 'Winston Smith',
-        user    => 'winston.smith',
-        host    => 'recdep.minitrue',
-        comment => 'Records Department',
+        display-name => 'Winston Smith',
+        user         => 'winston.smith',
+        host         => 'recdep.minitrue',
+        comment      => 'Records Department',
     );
     print $winston's.address; #> winston.smith@recdep.minitrue
 
@@ -506,13 +523,13 @@ For example:
     use Email::Address :format-email-address;
 
     my $winston's = Email::Address.new(
-        phrase  => 'Winston Smith',
-        address => 'winston@recdep.minitrue',
+        display-name => 'Winston Smith',
+        address      => 'winston@recdep.minitrue',
     );
 
     my $julia's = Email::Address.new(
-        phrase  => 'Julia',
-        address => 'julia@ficdep.minitrue',
+        display-name => 'Julia',
+        address      => 'julia@ficdep.minitrue',
     );
 
     #> "Winstom Smith" <winston@recdep.minitrue>, Julia <julia@ficdep.minitrue
@@ -530,13 +547,13 @@ For example:
     use Email::Address :format-email-groups;
 
     my $winston's = Email::Address.new(
-        phrase  => 'Winston Smith',
-        address => 'winston@recdep.minitrue',
+        display-name => 'Winston Smith',
+        address      => 'winston@recdep.minitrue',
     );
 
     my $julia's = Email::Address.new(
-        phrase  => 'Julia',
-        address => 'julia@ficdep.minitrue',
+        display-name => 'Julia',
+        address      => 'julia@ficdep.minitrue',
     );
 
     my $user's = Email::Address.new(:address<user@oceania>);
