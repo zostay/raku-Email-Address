@@ -1,4 +1,4 @@
-unit package Email::Address;
+unit class Email::Address;
 use v6;
 
 # no precompilation;
@@ -246,6 +246,7 @@ class RFC5322-Actions {
             display-name => $<display-name>.made,
             address      => $<angle-addr>.made,
             comment      => $*comments.drain,
+            original     => ~$/,
         )
     }
     method angle-addr($/) { make $<addr-spec>.made // $<obs-angle-addr>.made }
@@ -253,7 +254,8 @@ class RFC5322-Actions {
         make %(
             type         => 'group',
             display-name => $<display-name>.made,
-            group-list   => $<group-list>.made,
+            mailbox-list => $<group-list>.made,
+            original     => ~$/,
         )
     }
     method display-name($/) { make $<phrase>.made }
@@ -264,6 +266,7 @@ class RFC5322-Actions {
         make %(
             local-part => $<local-part>.made,
             domain     => $<domain>.made,
+            original   => ~$/,
         )
     }
     method local-part($/) { make $<dot-atom>.made // $<quoted-string>.made // $<obs-local-part>.made }
@@ -299,99 +302,7 @@ class RFC5322-Actions {
     }
 }
 
-class AddrSpec {
-    has Str $.user is rw;
-    has Str $.host is rw;
-
-    method Str(--> Str:D) { compose-address($!user, $!host) }
-}
-
-subset CommentStr of Str where {
-    my regex balanced-parens { <-[()]>+ | '()'+ | '(' ~ ')' <balanced-parens> }
-    /^ <balanced-parens> $/
-};
-
-
-class GLOBAL::Email::Address {
-    has Str $.display-name is rw;
-    has AddrSpec $.address is rw;
-    has CommentStr $.comment is rw;
-
-    has Str $!original;
-    has Bool $!invalid;
-
-    multi method new(::?CLASS:U:
-        Str $display-name,
-        Str $address,
-        Str $comment,
-    ) {
-        self.bless(:$display-name, :$address, :$comment);
-    }
-
-    submethod BUILD(
-        :$!display-name,
-        :$!address,
-        :$!comment,
-        :$user,
-        :$host,
-    ) {
-        die "When constructing Email::Address, you may pass either address or host and user, but not both."
-            if $!address.defined && ($user.defined || $host.defined);
-
-        # address prevents user/host from being set
-        $!address = AddrSpec.new(:$user, :$host) without $!address;
-    }
-
-    method user(--> Str) is rw { return-rw $!address.user }
-    method host(--> Str) is rw { return-rw $!address.host }
-    method original(--> Str) { $!original }
-
-    method set-address(Str:D $address) {
-        ($!address.user, $!address.host) = split-address($address);
-        $!address.user = Nil without $!address.host;
-        $!address.host = Nil without $!address.user;
-    }
-
-    method name(--> Str) {
-        with $!display-name { return $!display-name if $!display-name.chars }
-        with $!comment { return $!comment if $!comment.chars }
-        with $.user { return $.user }
-        '';
-    }
-
-    method Str(--> Str) { self.format }
-
-    method parse(::?CLASS:U: Str:D $string --> Seq) {
-        parse-email-addresses($string, self);
-    }
-
-    method parse-bare-address(::?CLASS:U: Str:D $address --> Email::Address) {
-        self.new(:$address);
-    }
-
-    method format(::?CLASS:D: --> Str:D) {
-        format-email-addresses(self);
-    }
-
-    method is-valid(::?CLASS:D: --> Bool:D) {
-        $.user.defined && $.host.defined && $.host.chars;
-    }
-}
-
-class Group {
-    has Str $.display-name is rw;
-    has Email::Address @.addresses;
-}
-
-sub format-email-addresses(*@addresses --> Str) is export(:format-email-addresses) {
-    format-email-groups((Nil) => @addresses);
-}
-
-sub format-email-groups(*@groups --> Str) is export(:format-email-groups) {
-    ...
-}
-
-sub parse-email-addresses(Str:D $addresses --> Seq) is export(:parse-email-addresses) {
+my sub _parse($str, :$parser, :$actions, :$rule) {
     my $*comments = class {
         has $.comment;
         method drain() { my $c = $!comment; $!comment = Nil; $c }
@@ -401,20 +312,276 @@ sub parse-email-addresses(Str:D $addresses --> Seq) is export(:parse-email-addre
         }
     }.new;
 
-    #my $match = Email::Address::RFC5322-Parser.parse($str, actions => Email::Address::RFC5322-Actions );
-
+    $parser.parse($str, :$actions, :$rule).made;
 }
 
-sub parse-email-groups(Str:D $groups --> Seq) is export(:parse-email-groups) {
-    ...
+my sub is-atext($c) { ?RFC5322-Parser.parse($c, :rule<atext>) }
+
+my sub char-needs-escape($c) {
+    $c eq '"' | Q'\' | '\0' | '\t' | '\n' | '\r'
 }
 
-sub compose-address(Str $mailbox, Str $domain --> Str) is export(:compose-address) {
-    ...
+my proto maybe-escape(|) { * }
+multi maybe-escape("", :$quote-dot) { '""' }
+multi maybe-escape($data, :$quote-dot is copy = False) {
+    # leading or trailing dot is always quoted
+    $quote-dot++ if $data.starts-with('.') || $data.ends-with('.');
+
+    # is quoting needed otherwise?
+    my $chars = $data.comb;
+    if so $chars.first({ !is-atext($_) && ($quote-dot || $_ ne '.') }) {
+        # quote and escape
+        if so $chars.first({ char-needs-escape($_) }) {
+            qq["{[~] $chars.map({
+                char-needs-escape($_) ?? "\\$_" !! $_
+            })}"];
+        }
+
+        # only quote
+        else {
+            qq["$data"];
+        }
+    }
+
+    # no quote or escape
+    else {
+        $data;
+    }
 }
 
-sub split-address(Str $input --> List) is export(:split-address) {
-    ...
+my sub has-mime-word($str) { $str.contains("=?") }
+
+role AddrSpec {
+    has Str $.local-part is rw;
+    has Str $.domain is rw;
+
+    method format(--> Str:D) {
+        join '@', maybe-escape($!local-part), $!domain
+    }
+
+    method Str(--> Str:D) { self.format }
+}
+
+my class AddrSpec::Parsed does AddrSpec {
+    has Str $.original;
+}
+
+subset CommentStr of Str where {
+    # Only match strings that contain balanced parentheses
+    my $balanced-parens;
+    $balanced-parens = regex {
+        [
+        | <-[()]>
+        | '()'
+        | '(' ~ ')' $balanced-parens
+        ]+
+    }
+
+    !.defined || /^ $balanced-parens $/
+};
+
+role Mailbox {
+    has Str $.display-name is rw;
+    has AddrSpec $.address is rw;
+    has CommentStr $.comment is rw;
+
+    method local-part(--> Str) is rw { return-rw $!address.local-part }
+    method domain(--> Str) is rw { return-rw $!address.domain }
+
+    method set-address(
+        Str:D $address,
+        :$parser = RFC5322-Parser,
+        :$actions = RFC5322-Actions,
+    ) {
+        my %addr-spec = _parse($address, :$parser, :$actions, :rule<addr-spec>);
+        $!address.local-part = %addr-spec<local-part>;
+        $!address.domain     = %addr-spec<domain>;
+        $!address;
+    }
+
+    method guess-name(--> Str) {
+        with $!display-name { return $!display-name if $!display-name.chars }
+        with $!comment { return $!comment if $!comment.chars }
+        with $.local-part { return $.local-part }
+        '';
+    }
+
+    method format(--> Str) {
+        my $address = '';
+
+        # quoting can't be used when =?...?...?= mime words are in the name,
+        # use obsolete RFC822 display name instead in that case. Since we don't
+        # make any effort to understand or decode these, we assume we'll
+        # just encounter them as-is but do this one special thing for them
+        with $!display-name {
+            if has-mime-word($!display-name) {
+                $address ~= $!display-name;
+            }
+            else {
+                $address ~= maybe-escape($!display-name);
+            }
+
+            $address ~= " <$!address>";
+        }
+
+        else {
+            $address ~= $!address;
+        }
+
+        $address ~= " ($!comment)" with $!comment;
+
+        $address;
+    }
+
+    method Str(--> Str) { self.format }
+}
+
+my class Mailbox::Parsed does Mailbox {
+    has Str $.original;
+}
+
+role Group {
+    has Str $.display-name is rw;
+    has Mailbox @.mailbox-list;
+
+    method !parse-if-needed(@addresses, :$parser, :$actions) {
+        gather for @addresses {
+            when Mailbox { .take }
+            default {
+                my $mailbox = _parse(~$_, :$parser, :$actions, :rule<mailbox>);
+                take Mailbox::Parsed.new(
+                    display-name => $mailbox<display-name>,
+                    address      => $mailbox<address>,
+                    comment      => $mailbox<comment>,
+                    original     => $_,
+                );
+            }
+        }
+    }
+
+    multi method new(::?CLASS:U:
+        Str $display-name,
+        *@addresses,
+        :$parser = RFC5322-Parser,
+        :$actions = RFC5322-Actions,
+    ) {
+        self.bless:
+            :$display-name,
+            mailbox-list => self!parse-if-needed(@addresses, :$parser, :$actions),
+            ;
+    }
+
+    method format(--> Str) {
+        my $group = '';
+
+        # quoting can't be used when =?...?...?= mime words are in the name,
+        # use obsolete RFC822 display name instead in that case. Since we don't
+        # make any effort to understand or decode these, we assume we'll
+        # just encounter them as-is but do this one special thing for them
+        if has-mime-word($!display-name) {
+            $group ~= $!display-name;
+        }
+        else {
+            $group ~= maybe-escape($!display-name);
+        }
+
+        $group ~= ': ';
+        $group ~= join(', ', .format) for @!mailbox-list;
+        $group ~= ';';
+    }
+
+    method Str(--> Str) { self.format }
+}
+
+my class Group::Parsed does Group {
+    has Str $.original;
+}
+
+my sub build-addr-spec(
+    %spec,
+    :$addr-spec-class = AddrSpec::Parsed,
+) {
+    $addr-spec-class.new(
+        local-part => .<local-part>,
+        domain     => .<domain>,
+        original   => .<original>,
+    ) with %spec;
+}
+
+my sub build-mailbox(
+    %spec,
+    :$mailbox-class = Mailbox::Parsed,
+    :$addr-spec-class = AddrSpec::Parsed,
+) {
+    $mailbox-class.new(
+        display-name => .<display-name>,
+        address      => build-addr-spec(.<address>, :$addr-spec-class),
+        comment      => .<comment> // Str,
+        original     => .<original>,
+    ) given %spec;
+}
+
+my sub build-group(
+    %spec,
+    :$group-class = Group::Parsed,
+    :$mailbox-class = Mailbox::Parsed,
+    :$addr-spec-class = AddrSpec::Parsed,
+) {
+    $group-class.new(
+        display-name => .<display-name>,
+        mailbox-list => .<mailbox-list>.map({ build-mailbox($_, :$mailbox-class, :$addr-spec-class) }),
+        original     => .<original>,
+    ) with %spec;
+}
+
+multi method parse(::?CLASS:U: Str $str, :$mailboxes!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Seq) {
+    gather for _parse($str, :$parser, :$actions, :rule<mailbox-list>) {
+        take build-mailbox($_);
+    }
+}
+
+multi method parse(::?CLASS:U: Str $str, :$groups!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Seq) {
+    gather for _parse($str, :$parser, :$actions, :rule<group-list>) {
+        take build-group($_);
+    }
+}
+
+multi method parse(::?CLASS:U: Str $str, :$addresses!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Seq) {
+    gather for _parse($str, :$parser, :$actions, :rule<address-list>) {
+        when so .<type> eq 'mailbox' { take build-mailbox($_) }
+        when so .<type> eq 'group' { take build-group($_) }
+    }
+}
+
+multi method parse-one(::?CLASS:U: Str $str, :$mailbox!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Mailbox) {
+    build-mailbox($_)
+        given _parse($str, :$parser, :$actions, :rule<mailbox>);
+}
+
+multi method parse-one(::?CLASS:U: Str $str, :$group!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Group) {
+    build-group($_)
+        given _parse($str, :$parser, :$actions, :rule<group>);
+}
+
+multi method parse-one(::?CLASS:U: Str $str, :$address!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> Any) {
+    given _parse($str, :$parser, :$actions, :rule<address>) {
+        when so .<type> eq 'mailbox' { take build-mailbox($_) }
+        when so .<type> eq 'group' { take build-group($_) }
+    }
+}
+
+
+multi method format(::?CLASS:U: *@addresses --> Str) {
+    join ', ', @addresses».format;
+}
+
+multi method compose(::?CLASS:U: Str $local-part, Str $domain --> Str) {
+    AddrSpec.new(:$local-part, :$domain).format
+}
+
+multi method split(::?CLASS:U: Str $address, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> List) {
+    (.<local-part>, .<domain>)
+        given _parse($address, :$parser, :$actions, :rule<addr-spec>);
 }
 
 =begin pod
@@ -426,7 +593,8 @@ Email::Address - parse and format RFC 5322 email addresses and groups
 =head1 SYNOPSIS
 
     use Email::Address;
-    my $winston's = Email::Address.new(
+
+    my $winston's = Email::Address::Mailbox.new(
         display-name => 'Winston Smith',
         user         => 'winston.smith',
         host         => 'recdep.minitrue',
@@ -440,7 +608,7 @@ Email::Address - parse and format RFC 5322 email addresses and groups
     my $user's = Email::Address.parse('user <user@oceania>');
     print $user's.host; #> oceania
 
-    my $goldstein's = Email::Address.parse('goldstein@brotherhood.oceania', :bare);
+    my $goldstein's = Email::Address.parse-one('goldstein@brotherhood.oceania');
     print $goldstein's.user; #> goldstein
 
     my $emails = join ', ',
