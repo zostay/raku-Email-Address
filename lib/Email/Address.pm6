@@ -39,6 +39,10 @@ grammar RFC5234-Parser {
     # WSP            =  SP / HTAB\r
     #                        ; white space\r
 	token wsp        { <sp> || <htab> }
+
+    # VCHAR          =  %x21-7E
+    #                        ; visible (printing) characters
+    token vchar      { <[ \x[21]..\x[7e] ]> }
 }
 
 grammar RFC5322-Parser is RFC5234-Parser {
@@ -122,13 +126,13 @@ grammar RFC5322-Parser is RFC5234-Parser {
                         '~' }
 
     # atom            =   [CFWS] 1*atext [CFWS]\r
-    token atom        { <.cfws>? <atext>+ <.cfws>? }
+    token atom        { $<pre> = [ <cfws>? ] <atext>+ $<post> = [ <cfws>? ] }
 
     # dot-atom-text   =   1*atext *("." 1*atext)\r
     token dot-atom-text { $<atexts> = [ <atext>+ ]+ % '.' }
 
     # dot-atom        =   [CFWS] dot-atom-text [CFWS]\r
-    token dot-atom    { <.cfws>? <dot-atom-text> <.cfws>? }
+    token dot-atom    { $<pre> = [ <cfws>? ] <dot-atom-text> $<post> = [ <cfws>? ] }
 
     # FWS             =   ([*WSP CRLF] 1*WSP) /  obs-FWS\r
     #                                        ; Folding white space\r
@@ -150,7 +154,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
     token comment     { '(' $<comment-content> = [ [ <fws>? <ccontent> ]* <fws>? ] ')' }
 
     # CFWS            =   (1*([FWS] comment) [FWS]) / FWS\r
-    token cfws        { [ [ <fws>? <comment> ]+ <fws>? ] | <fws> }
+    token cfws        { [ [ $<pres> = [ <fws>? ] <comment> ]+ $<post> = [ <fws>? ] ] | $<orelse> = <fws> }
 
     # obs-FWS         =   1*WSP *(CRLF 1*WSP)\r
     token obs-fws     { <wsp>+ [ <crlf> <wsp>+ ]* }
@@ -171,7 +175,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
     #                     DQUOTE *([FWS] qcontent) [FWS] DQUOTE\r
     #                     [CFWS]\r
     token quoted-string { <.cfws>?
-                          <.dquote> [ <.fws>? <qcontent> ]* <.fws>? <.dquote>
+                          <.dquote> $<quoted-string> = [ [ <.fws>? <qcontent> ]* <.fws>? ] <.dquote>
                           <.cfws>? }
 
     # obs-NO-WS-CTL   =   %d1-8 /            ; US-ASCII control\r
@@ -194,14 +198,8 @@ grammar RFC5322-Parser is RFC5234-Parser {
     # obs-qp          =   "\\" (%d0 / obs-NO-WS-CTL / LF / CR)\r
     token obs-qp      { '\\' [ \0 | <obs-no-ws-ctl> | <lf> | <cr> ] }
 
-    # obs-body        =   *((*LF *CR *((%d0 / text) *LF *CR)) / CRLF)\r
-    token obs-body    { [ [ <lf>* <cr>* [ [ \0 | <text> ] <lf>* <cr>* ]* ] | <crlf> ]* }
-
     # obs-phrase      =   word *(word / "." / CFWS)\r
-    token obs-phrase  { <word> [ <word> | '.' | <cfws> ]* }
-
-    # obs-phrase-list =   [phrase / CFWS] *("," [phrase / CFWS])\r
-    token obs-phrase-list { [ <phrase> | <cfws> ]? [ ',' [ <phrase> | <cfws> ]? ]* }
+    token obs-phrase  { $<head> = <word> $<tail> = [ <word> | '.' | <cfws> ]* }
 
     # quoted-pair     =   ("\\" (VCHAR / WSP)) / obs-qp\r
     token quoted-pair { [ '\\' [ <vchar> | <wsp> ] ] | <obs-qp> }
@@ -214,11 +212,11 @@ grammar RFC5322-Parser is RFC5234-Parser {
 
     # obs-domain-list =   *(CFWS / ",") "@" domain
     #                     *("," [CFWS] ["@" domain])
-    token obs-domain-list { [ <cfws> | ',' ]* '@' <domain>
-                            [ ',' <cfws>? [ '@' <domain> ]? ]* }
+    token obs-domain-list { [ <.cfws> | ',' ]* '@' $<head> = <domain>
+                            $<tail> = [ ',' <.cfws>? [ '@' <domain> ]? ]* }
 
     # obs-mbox-list   =   *([CFWS] ",") mailbox *("," [mailbox / CFWS])
-    token obs-mbox-list { [ <cfws>? ',' ]* <mailbox> [ ',' [ <mailbox> | <cfws> ]? ]* }
+    token obs-mbox-list { [ <cfws>? ',' ]* $<head> = <mailbox> $<tail> = [ ',' [ <mailbox> | <cfws> ]? ]* }
 
     # obs-addr-list   =   *([CFWS] ",") address *("," [address / CFWS])
     token obs-addr-list { [ <cfws>? ',' ]* <address> [ ',' [ <address> | <cfws> ]? ]* }
@@ -238,6 +236,7 @@ grammar RFC5322-Parser is RFC5234-Parser {
 
 class RFC5322-Actions {
     sub unfold-fws($_) { S:global/ "\r\n" ( " " | "\t" ) /$0/ }
+    sub unquote-pairs($_) { S:global/ "\\" ( " " | "\t" | "\0" | <[ \x1..\x8 \xb \xc \xe..\x[1f] \x[7f] ]> | "\n" | "\r" ) /$0/ }
 
     method TOP($/) { make $<address-list>.made }
     method address($/) { make $<mailbox>.made // $<group>.made }
@@ -271,10 +270,34 @@ class RFC5322-Actions {
     method local-part($/) { make $<dot-atom>.made // $<quoted-string>.made // $<obs-local-part>.made }
     method domain($/) { make $<dot-atom>.made // $<domain-literal>.made // $<obs-domain>.made }
     method domain-literal($/) {
-        make ($<pre-literal>.made ~ "[$<literal>]").&unfold-fws
+        make ($<pre-literal>.made ~ "[$<literal>]").&unfold-fws.&unquote-pairs
     }
-
-    method comment($/) { $*comments.append("$<comment-content>") }
+    method word($/) { make $<atom>.made // $<quoted-string>.made }
+    method phrase($/) { make [~] @($<word>».made) // $<obs-phrase>.made }
+    method atom($/) { quietly make $<pre>.made ~ ([~] $<atext>) ~ $<post>.made }
+    method dot-atom-text($/) { make [~] $<atexts> }
+    method dot-atom($/) { quietly make $<pre>.made ~ $<dot-atom-text>.made ~ $<post>.made }
+    method quoted-string($/) { make "$<quoted-string>".&unquote-pairs }
+    method comment($/) { $*comments.append("$<comment-content>".&unquote-pairs) }
+    method cfws($/) { quietly make [~] |$<pres>, $<post> }
+    method obs-phrase($/) {
+        make $<head>.made ~ $<tail>.map({
+            when '.' { '.' }
+            default { .made }
+        });
+    }
+    method obs-angle-addr($/) {
+        my %address = $<addr-spec>.made;
+        %address<local-part> = $<obs-route>.made ~ %address<local-poart>;
+        make %address;
+    }
+    method obs-route($/) { make $<obs-domain-list>.made ~ ':' }
+    method obs-domain-list($/) {
+        make join ',', ($<head>.made, |$<tail>.map({ $<domain>.made }));
+    }
+    method obs-mbox-list($/) {
+        make ($<head>.made, |$<tail>».made);
+    }
 }
 
 sub format-email-addresses(*@addresses --> Str) is export(:format-email-addresses) {
