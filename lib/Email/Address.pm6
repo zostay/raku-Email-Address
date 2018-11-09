@@ -5,6 +5,17 @@ use Email::Address::Group;
 use Email::Address::Mailbox;
 use Email::Address::Parser :parse-email-address;
 
+class GLOBAL::X::Email::Address is Exception { }
+
+class GLOBAL::X::Email::Address::Syntax is Exception {
+    has $.part;
+    has $.input;
+
+    method message(--> Str) {
+        qq[Syntax error in string "{$!input.trans('"' => '\"')}" while parsing $!part];
+    }
+}
+
 my sub build-addr-spec(
     %spec,
     :$addr-spec-class = AddrSpec::Parsed,
