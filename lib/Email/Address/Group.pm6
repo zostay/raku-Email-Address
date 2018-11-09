@@ -5,7 +5,7 @@ use Email::Address::Format :ALL;
 use Email::Address::Mailbox;
 use Email::Address::Parser :parse-email-address;
 
-role Group does Format {
+role Group does Email::Address::Format {
     has Str $.display-name is rw;
     has Email::Address::Mailbox @.mailbox-list;
 

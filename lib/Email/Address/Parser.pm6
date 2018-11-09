@@ -319,6 +319,18 @@ module Parser {
 
 =begin pod
 
+=head1 NAME
+
+Email::Address::Parser - parser internals
+
+=head1 DESCRIPTION
+
+This compunit contains the parser classes. These are directly translated from the ABNF in RFC 5322 and related RFCs.
+
+Use of these components directly is undocumented. Direct use of these APIs should be avoided.
+
+=head1 MODULES
+
 =head2 Email::Address::RFC5322-Parser
 
 This is a Perl 6 grammar translated directly from the RFC 5233 ABNF grammar.
@@ -332,5 +344,9 @@ Parses a string and returns information about an email address list.
 =head2 Email::Address::RFC5322-Actions
 
 This is an actions that can be paired with the grammar that turns the parsed matches into hashes and lists of hashes that are easier to work with.
+
+=head2 Email::Address::Parser
+
+Contains magicky magic stuff that does magic with butterflies.
 
 =end pod

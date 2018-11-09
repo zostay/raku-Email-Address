@@ -4,9 +4,9 @@ use v6;
 use Email::Address::Parser :parse-email-address;
 use Email::Address::Format :ALL;
 
-role AddrSpec does Format {
-    has Str $.local-part is rw;
-    has Str $.domain is rw;
+role AddrSpec does Email::Address::Format {
+    has Str $.local-part is rw is required;
+    has Str $.domain is rw is required;
 
     method format(--> Str:D) {
         join '@', maybe-escape($!local-part), $!domain
@@ -15,7 +15,7 @@ role AddrSpec does Format {
     method Str(--> Str:D) { self.format }
 }
 
-my class AddrSpec::Parsed does AddrSpec {
+class AddrSpec::Parsed does AddrSpec {
     has Str $.original;
 }
 
@@ -30,13 +30,71 @@ subset CommentStr of Str where {
         ]+
     }
 
-    !.defined || /^ $balanced-parens $/
+    !.defined || ?/^ $balanced-parens $/
 };
 
-role Mailbox does Format {
+role Mailbox does Email::Address::Format {
     has Str $.display-name is rw;
-    has AddrSpec $.address is rw;
+    has AddrSpec $.address is rw is required;
     has CommentStr $.comment is rw;
+
+    multi method new(
+        Str :$display-name,
+        AddrSpec:D :$address,
+        CommentStr :$comment?,
+        --> Mailbox:D
+    ) {
+        self.bless(
+            :$display-name,
+            :$address,
+            :$comment,
+        );
+    }
+
+    multi method new(
+        Str $display-name,
+        AddrSpec:D $address,
+        CommentStr $comment?,
+        --> Mailbox:D
+    ) {
+        self.bless(
+            :$display-name,
+            :$address,
+            :$comment,
+        );
+    }
+
+    multi method new(
+        Str $display-name,
+        Str:D $address,
+        CommentStr $comment?,
+        --> Mailbox:D
+    ) {
+        self.bless(
+            :$display-name,
+            :$address,
+            :$comment,
+        );
+    }
+
+    multi method new(*%_, *@_) {
+        die "email parameters are invalid";
+    }
+
+    multi submethod BUILD(
+        Str :$!display-name,
+        AddrSpec:D :$!address,
+        CommentStr :$!comment,
+    ) {}
+
+    multi submethod BUILD(
+        Str :$!display-name,
+        Str:D :$address,
+        CommentStr :$!comment,
+    ) {
+        $!address = AddrSpec.new(:local-part(''), :domain(''));
+        self.set-address($address);
+    }
 
     method local-part(--> Str) is rw { return-rw $!address.local-part }
     method domain(--> Str) is rw { return-rw $!address.domain }
@@ -95,6 +153,14 @@ my class Mailbox::Parsed does Mailbox {
 }
 
 =begin pod
+
+=head1 NAME
+
+Email::Address::Mailbox - representation of a single email address
+
+=head1 SYNOPSIS
+
+    use Email::Address;
 
 =head2 Email::Address::Mailbox
 
