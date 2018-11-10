@@ -1,4 +1,4 @@
-unit class Email::Address;
+unit class Email::Address:ver<0.0>:auth<github:zostay>;
 use v6;
 
 use Email::Address::Group;
