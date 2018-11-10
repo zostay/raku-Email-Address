@@ -47,6 +47,18 @@ module FormatHelpers {
 
 =begin pod
 
+=head1 NAME
+
+Email::Address::Format - helpers for formatting email addresses
+
+=head1 DESCRIPTION
+
+This is some helpers related to formatting email addresses. However, there's really not much hear of interest for outside the library.
+
+=head1 DECLARATIONS
+
+This is the list of classes, roles, and what-not that are provided by this that might be useful outside of the development of C<Email::Address> itself.
+
 =head2 Email::Address::Format
 
 The mailbox, group, and addr-spec classes all implement this role by providing a format method, which returns the clean formatted version of the object. When possible, this will be output according to the latest RFC 5322 spec, but it will fallback to RFC 2822 and RFC 822 compatible email addresses when required.

@@ -56,6 +56,7 @@ role Group does Email::Address::Format {
     }
 
     method Str(--> Str) { self.format }
+    method gist(--> Str) { self.format }
 }
 
 my class Group::Parsed does Group {
@@ -64,28 +65,69 @@ my class Group::Parsed does Group {
 
 =begin pod
 
-=head2 Email::Address::Group
+=head1 NAME
 
-The group class represents a list of emails grouped by a name.
+Email::Address::Group - representation of a named group of email addresses
 
-=head3 method display-name
+=head1 SYNOPSIS
+
+    use Email::Address;
+
+    my $to-header = q:to/END_OF_TO/;
+    Presidents: "Peyton Randalf" <peyton
+     .randalf@example.com> (Virginia House of
+     Burgesses), Henry <henry@example.com>;,
+     undisclosed-recipients: ;,
+     "More Presidents": adams <a.adams@example.com>;
+    END_OF_TO
+
+    my @groups = Email::Address.parse($to-header, :groups);
+    for @groups {
+        say .format;
+    }
+    #> Presidents: "Peyton Randalf" <petyon.randalf@example.com> (Virginia House of Burgesses), Henry <henry@example.com>;
+    #> undisclosed-recipients: ;
+    #> "More Presidents": adams <a.adams@example.com>;
+
+    for @groups[0].mailbox-list {
+        say .format;
+    }
+    #> "Peyton Randalf" <petyon.randalf@example.com> (Virginia House of Burgesses)
+    #> Henry <henry@example.com>
+
+    my $other-group = Email::Address::Group.new(
+        'All', flat @groups.map({ .mailbox-list }),
+    );
+    say $other-group;
+    #> All: "Peyton Randalf" <peyton.randalf@example.com> (Virginia House of Burgesses), Henry <henry@example.com>, adams <a.adams@example.com>;
+
+=head1 DESCRIPTION
+
+This class encapsulates the tools for storing and manipulating RFC 5322 email address groups.
+
+=head1 METHODS
+
+=head2 method display-name
 
     has Str $.display-name is rw
 
 This is the name of the email address group.
 
-=head3 method mailbox-list
+=head2 method mailbox-list
 
     has Email::Address::Mailbox @.mailbox-list
 
 This is the list of mailboxes in the group. Groups cannot be nested.
 
-=head3 method format
+=head2 method format
 
     method format(--> Str)
     method Str(--> Str)
+    method gist(--> Str)
 
 This outputs the email address group with the name and all the mailboxes associated with it.
+
+=head1 VARIANTS
 
 =head2 Email::Address::Group::Parsed
 

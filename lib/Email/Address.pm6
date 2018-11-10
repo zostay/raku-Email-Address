@@ -89,6 +89,10 @@ multi method parse-one(::?CLASS:U: Str $str, :$address!, :$parser = RFC5322-Pars
     }
 }
 
+multi method parse-one(::?CLASS:U: Str $str, :$addr-spec!, :$parser = RFC5322-Parser, :$actions = RFC5322-Actions --> AddrSpec) {
+    build-addr-spec($_)
+        given parse-email-address($str, :$parser, :$actions, :rule<addr-spec>);
+}
 
 method format(::?CLASS:U: *@addresses --> Str) {
     join ', ', gather for @addresses -> $_ is copy {
@@ -219,6 +223,14 @@ This code has some parts that are ported from Perl's Email::Address::XS, but the
 
 This class is generally used without constructing an instance, but you can construct an instance too if you prefer. There's no real advantage to doing that though.
 
+When parsing, please note that an RFC 5322 email is the assumed context. This means that folding whitespace will be ignored and automatically unfolded as part of parsing. For most use cases, this probably won't matter, but you should be aware of it.
+
+B<Which parsing method should be used?> This is an important decision to consider when using this module. You should take care to use the one that makes sense for your particular use case. The documentation below highlights the headers for which each parser is intended to be used. However, this module may be useful in other situations.
+
+Anything that looks like a To or similar header should use <method parse> with C<:addresses> mode. Anything that looks like a From should use C<method parse> with C<:mailboxes> or C<method parse-one> with C<:mailbox> depending on whether you want exactly one or more than one From address (the RFC allows for multiple From addresses).
+
+And most other situations where you are asking the user to enter an email address, the mostly like choice is C<method parse-one> with C<:addr-spec>, which just parses the address itself with none of the extra bits.
+
 =head1 METHODS
 
 =head2 method parse
@@ -230,32 +242,36 @@ This class is generally used without constructing an instance, but you can const
 The parse methods take a string and return zero or more email address objects. When calling the parse method, you must provide an adverb to specify the kind of parsing to perform:
 
 =defn C<:mailboxes>
-The parser will parse this as a list of mailboxes and return a sequence of C<Email::Address::Mailbox> objects.
+The parser will parse this as a list of mailboxes and return a sequence of C<Email::Address::Mailbox> objects. When parsing an email message, this method should be used with the From and Resent-From headers.
 
 =defn C<:groups>
 The parser will parse this as a list of groups and return a sequence of C<Email::Address::Group> objects.
 
 =defn C<:addresses>
-The parser will parse this as an address list, which may contain a combination of mailboxes and groups. The sequence returned may contain C<Email::Address::Group> and C<Email::Address::Mailbox> objects.
+The parser will parse this as an address list, which may contain a combination of mailboxes and groups. The sequence returned may contain C<Email::Address::Group> and C<Email::Address::Mailbox> objects. When parsing email, this method should be used with the Reply-To, To, Cc, Bcc, Resent-To, Resent-Cc, and Resent-Bcc headers. This is the most accepting and generic parsing method for other cases when you want to be able to accept 0 or more email addresses.
 
 If the given string cannot be parsed, an C<X::Email::Address> exception will be thrown.
 
 =head2 method parse-one
 
-    multi method parse-one(Str $str, :$mailbox!, :$parser, :$actions --> Seq)
-    multi method parse-one(Str $str, :$group! :$parser, :$actions --> Seq)
-    multi method parse-one(Str $str, :$address!, :$parser, :$actions --> Seq)
+    multi method parse-one(Str $str, :$mailbox!, :$parser, :$actions --> Email::Address::Mailbox)
+    multi method parse-one(Str $str, :$group! :$parser, :$actions --> Email::Address::Group)
+    multi method parse-one(Str $str, :$address!, :$parser, :$actions --> Any)
+    multi method parse-one(Str $str, :$addr-spec!, :$parser, :$actions --> Email::Address::AddrSpec)
 
 The parse-one methods take a string and return exactly one email address object. When calling this method, you must provide an adverb to specify the kind of parsing to perform:
 
 =defn C<:mailbox>
-The parser will parse this as a single mailbox and return a C<Email::Address::Mailbox>
+The parser will parse this as a single mailbox and return a C<Email::Address::Mailbox>. When parsing an email message, this is the parser to use with the Sender and Resent-Sender headers.
 
 =defn C<:group>
-The parser will parse this as a single group and return a C<Email::Address::Group>
+The parser will parse this as a single group and return a C<Email::Address::Group>.
 
 =defn C<:address>
 The parser will parse this as a single email address or group and will return either a C<Email::Address::Group> or C<Email::Address::Mailbox>.
+
+=defn C<:addr-spec>
+The parser will parse this as just the email address part and return a C<Email::Address::AddrSpec>. This would be just the "user@example.com" part without extra details like comments and display name you find with C<:mailbox>.
 
 If the given string does not match a single email address, an C<X::Email::Address> exception will be thrown.
 
