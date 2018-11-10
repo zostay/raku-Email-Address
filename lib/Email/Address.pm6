@@ -117,57 +117,6 @@ multi method split(::?CLASS:U: Str $address, :$parser = RFC5322-Parser, :$action
         given parse-email-address($address, :$parser, :$actions, :rule<addr-spec>);
 }
 
-# =begin pod
-#
-# =head1 NAME
-#
-# Email::Address - parse and format RFC 5322 email addresses and groups
-#
-# =head1 SYNOPSIS
-#
-#     use Email::Address;
-#
-#     my $peyton's = Email::Address::Mailbox.new(
-#         display-name => 'Peyton Randalf',
-#         local-part   => 'peyton.randalf',
-#         domain       => 'example.com',
-#         comment      => 'Virginia House of Burgesses',
-#     );
-#     print $peyton's.address; #> petyon.randalf@example.com
-#
-#     my $henry's = Email::Address::Mailbox.new('Henry', 'henry@example.com');
-#     print $henry's.format; #> Henry <henry@example.com>
-#
-#     my $andrew's = Email::Address.parse-one('adams <a.adams@example.com>', :mailbox);
-#     print $andrew's.domain; #> example.com
-#
-#     my $laurens's = Email::Address.parse-one('laurens@example.com');
-#     print $laurens's.local-part; #> laurens
-#
-#     my $emails = join ', ',
-#         '"John Jay" <john.jay@example.com> (New York Supreme Court)',
-#         'Huntington <shunting@example.com>',
-#         ;
-#     my @mailboxes = Email::Address.parse($emails, :mailboxes);
-#     # my ($jay's, $samuel's) = @mailboxes;
-#
-#     # Output these three addresses with .format: Phrase <email> (comment)
-#     my Str $addresses = Email::Address.format: $peyton's, $henry's, $john's);
-#
-#     my Str $addresses = Email::Address.format:
-#         'Presidents' => ($peyton's, $henry's),
-#         *            => ($andrew's),
-#     );
-#     say $addresses; #> Presidents: "Peyton Randalf" <peyton.randalf@example.com> (Virginia House of Burgesses), Henry <henry@example.com>;, adams <a.adams@example.com>
-#     my @addresses = Email::Address.parse($groups, :addresses);
-#
-#     my ($local-part, $domain) = Email::Address.split("henry(2nd pres.)@example.com');
-#     say $local-part; #> henry
-#     say $domain;     #> example.com
-#
-#     my $string = Email::Address.compose('t"@"mkean', 'example.com');
-#     say $string; #> "t\"@\"mkean"@example.com
-
 =begin pod
 
 =head1 NAME

@@ -1,0 +1,31 @@
+{
+    "name" : "Email::Address",
+    "license" : "Artistic-2.0",
+    "version" : "0.1",
+    "description" : "parse and format RFC 5322 email addresses and groups",
+    "authors" : [
+        "Sterling Hanenkamp <hanenkamp@cpan.org>"
+    ],
+    "perl" : "6.c",
+    "provides" : {
+        "Email::Address": "lib/Email/Address.pm6",
+        "Email::Address::AddrSpec": "lib/Email/Address/Mailbox.pm6",
+        "Email::Address::AddrSpec::Parsed": "lib/Email/Address/Mailbox.pm6",
+        "Email::Address::Mailbox": "lib/Email/Address/Mailbox.pm6",
+        "Email::Address::Mailbox::Parsed": "lib/Email/Address/Mailbox.pm6",
+        "Email::Address::Group": "lib/Email/Address/Group.pm6",
+        "Email::Address::Group::Parsed": "lib/Email/Address/Group.pm6",
+        "Email::Address::Format": "lib/Email/Address/Format.pm6",
+        "Email::Address::FormatHelpers": "lib/Email/Address/Format.pm6",
+        "Email::Address::Format": "lib/Email/Address/Format.pm6",
+        "Email::Address::RFC5234-Parser": "lib/Email/Address/Parser.pm6",
+        "Email::Address::RFC5322-Parser": "lib/Email/Address/Parser.pm6",
+        "Email::Address::RFC5322-Actions": "lib/Email/Address/Parser.pm6",
+        "Email::Address::Parser": "lib/Email/Address/Parser.pm6",
+        "X::Email::Address": "lib/Email/Address.pm6",
+        "X::Email::Address::Syntax": "lib/Email/Address.pm6"
+    },
+    "depends" : [ ],
+    "test-depends" : [ "Test", "Test::META" ],
+    "source-url" : "git://github.com/zostay/perl6-Email-Address.git"
+}
