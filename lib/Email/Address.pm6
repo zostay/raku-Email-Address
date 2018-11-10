@@ -110,6 +110,9 @@ method format(::?CLASS:U: *@addresses --> Str) {
             my ($display-name, @mailboxes) = .kv;
             take Group.new(:$display-name, :@mailboxes);
         }
+        when Str {
+            take self.parse-one($_, :address);
+        }
         default {
             X::Email::Address::AdHoc.new('unknown object sent to .format()');
         }
