@@ -1,5 +1,5 @@
-unit package Email::Address;
 use v6;
+unit package Email::Address;
 
 # no precompilation;
 # use Grammar::Tracer;
