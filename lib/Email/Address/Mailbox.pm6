@@ -93,7 +93,7 @@ role Mailbox does Email::Address::Format {
     }
 
     multi method new(*%_, *@_) {
-        die "email parameters are invalid";
+        X::Email::Address::AdHoc.new("email parameters are invalid");
     }
 
     multi submethod BUILD(

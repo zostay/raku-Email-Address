@@ -23,6 +23,7 @@
         "Email::Address::RFC5322-Actions": "lib/Email/Address/Parser.pm6",
         "Email::Address::Parser": "lib/Email/Address/Parser.pm6",
         "X::Email::Address": "lib/Email/Address.pm6",
+        "X::Email::Address::AdHoc": "lib/Email/Address.pm6",
         "X::Email::Address::Syntax": "lib/Email/Address.pm6"
     },
     "depends" : [ ],

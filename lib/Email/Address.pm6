@@ -7,7 +7,15 @@ use Email::Address::Parser :parse-email-address;
 
 class GLOBAL::X::Email::Address is Exception { }
 
-class GLOBAL::X::Email::Address::Syntax is Exception {
+class GLOBAL::X::Email::Address::AdHoc is X::Email::Address {
+    has $!message;
+
+    multi method new(Str:D $message) {
+        self.bless(:$message);
+    }
+}
+
+class GLOBAL::X::Email::Address::Syntax is X::Email::Address {
     has $.part;
     has $.input;
 
@@ -103,7 +111,7 @@ method format(::?CLASS:U: *@addresses --> Str) {
             take Group.new(:$display-name, :@mailboxes);
         }
         default {
-            die 'unknown object sent to .format()';
+            X::Email::Address::AdHoc.new('unknown object sent to .format()');
         }
     }
 }
