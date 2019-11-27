@@ -333,7 +333,7 @@ Use of these components directly is undocumented. Direct use of these APIs shoul
 
 =head2 Email::Address::RFC5322-Parser
 
-This is a Perl 6 grammar translated directly from the RFC 5233 ABNF grammar.
+This is a Raku grammar translated directly from the RFC 5233 ABNF grammar.
 
 =head3 method parse
 
